@@ -3,6 +3,7 @@ mod pulse;
 
 use libpulse_binding::context::subscribe::{Facility, InterestMaskSet};
 use notify::notify;
+use pulse::Volume;
 use std::collections::HashMap;
 use std::sync::mpsc;
 
@@ -42,9 +43,8 @@ impl PAnotify<'_> {
         loop {
             match self.event_channel.recv() {
                 Ok(Event::VolumeChanged) => {
-                    let volume = self.pulse.get_default_sink_volume()?.max().print();
-                    let volume_value = volume.trim_end_matches('%').trim().parse()?;
-                    self.notifier.send_volume_notification(volume_value).await?;
+                    let volume = self.pulse.get_default_sink_volume()?;
+                    self.notifier.send_volume_notification(volume).await?;
                 }
                 Ok(Event::DefaultDeviceChanged) => {
                     self.notifier.send_device_change_notification().await?;
@@ -69,22 +69,27 @@ impl<'a> Notifier<'a> {
         })
     }
 
-    async fn send_volume_notification(&mut self, volume: u32) -> anyhow::Result<()> {
-        let id = self
+    async fn send_volume_notification(&mut self, volume: Volume) -> anyhow::Result<()> {
+        let id = *self
             .active_notifications
             .get(&Event::VolumeChanged)
             .unwrap_or(&0);
-        let new_id = self
-            .builder
-            .clone()
-            .with_id(*id)
-            .with_summary(&format!("Volume [ {}% ]", volume))
-            .with_progress(volume as i32)
-            .send()
-            .await?;
 
+        let mut builder = self.builder.clone().with_id(id);
+        let volume_summary = format!("Volume [ {}% ]", volume.value);
+
+        if volume.muted {
+            builder = builder.with_summary("Volume [ muted ]");
+        } else {
+            builder = builder
+                .with_summary(&volume_summary)
+                .with_progress(volume.value as i32);
+        }
+
+        let new_id = builder.send().await?;
         self.active_notifications
             .insert(Event::VolumeChanged, new_id);
+
         Ok(())
     }
 

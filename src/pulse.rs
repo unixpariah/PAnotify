@@ -2,9 +2,13 @@ use libpulse_binding as pulse;
 use libpulse_binding::callbacks::ListResult;
 use libpulse_binding::context::subscribe::{Facility, InterestMaskSet};
 use libpulse_binding::proplist::Proplist;
-use libpulse_binding::volume::ChannelVolumes;
 use std::cell::RefCell;
 use std::rc::Rc;
+
+pub struct Volume {
+    pub value: u32,
+    pub muted: bool,
+}
 
 pub struct PulseManager {
     mainloop: pulse::mainloop::threaded::Mainloop,
@@ -36,17 +40,19 @@ impl PulseManager {
         Ok(Self { mainloop, context })
     }
 
-    pub fn get_default_sink_volume(&mut self) -> anyhow::Result<ChannelVolumes> {
+    pub fn get_default_sink_volume(&mut self) -> anyhow::Result<Volume> {
         let sink_name = self.get_default_sink_name()?;
         self.get_sink_volume(&sink_name)
     }
 
     pub fn get_default_sink_name(&mut self) -> anyhow::Result<Box<str>> {
         let result = Rc::new(RefCell::new(None));
-        let result_clone = result.clone();
 
-        let op = self.context.introspect().get_server_info(move |info| {
-            *result_clone.borrow_mut() = info.default_sink_name.as_ref().map(|n| n.as_ref().into());
+        let op = self.context.introspect().get_server_info({
+            let result = Rc::clone(&result);
+            move |info| {
+                *result.borrow_mut() = info.default_sink_name.as_ref().map(|n| n.as_ref().into());
+            }
         });
 
         self.wait_for_operation(op)?;
@@ -56,18 +62,27 @@ impl PulseManager {
             .ok_or_else(|| anyhow::anyhow!("No default sink"))
     }
 
-    pub fn get_sink_volume(&mut self, sink_name: &str) -> anyhow::Result<ChannelVolumes> {
+    pub fn get_sink_volume(&mut self, sink_name: &str) -> anyhow::Result<Volume> {
         let result = Rc::new(RefCell::new(None));
-        let result_clone = result.clone();
 
-        let op = self
-            .context
-            .introspect()
-            .get_sink_info_by_name(sink_name, move |sink_list| {
+        let op = self.context.introspect().get_sink_info_by_name(sink_name, {
+            let result = Rc::clone(&result);
+            move |sink_list| {
                 if let ListResult::Item(item) = sink_list {
-                    *result_clone.borrow_mut() = Some(item.volume);
+                    *result.borrow_mut() = Some(Volume {
+                        value: item
+                            .volume
+                            .max()
+                            .print()
+                            .trim_end_matches('%')
+                            .trim()
+                            .parse()
+                            .unwrap_or_default(),
+                        muted: item.mute,
+                    });
                 }
-            });
+            }
+        });
 
         self.wait_for_operation(op)?;
         result
