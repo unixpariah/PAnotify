@@ -50,5 +50,9 @@
       packages = forAllSystems (pkgs: {
         default = pkgs.callPackage ./nix/package.nix { };
       });
+
+      homeManagerModules = {
+        default = import ./nix/home-manager.nix;
+      };
     };
 }

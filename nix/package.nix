@@ -14,7 +14,19 @@ rustPlatform.buildRustPackage {
 
   cargoLock.lockFile = ../Cargo.lock;
 
-  src = ../.;
+  src = lib.cleanSourceWith {
+    src = ../.;
+    filter =
+      path: type:
+      let
+        relPath = lib.removePrefix (toString ../. + "/") (toString path);
+      in
+      lib.any (p: lib.hasPrefix p relPath) [
+        "src"
+        "Cargo.toml"
+        "Cargo.lock"
+      ];
+  };
 
   nativeBuildInputs = [ pkg-config ];
 
@@ -41,6 +53,6 @@ rustPlatform.buildRustPackage {
     license = licenses.mit;
     maintainers = [ maintainers.unixpariah ];
     platforms = platforms.linux;
-    mainProgram = "PAnotify";
+    mainProgram = "panotify";
   };
 }
