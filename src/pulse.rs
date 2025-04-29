@@ -21,14 +21,14 @@ impl PulseManager {
         let mut proplist =
             Proplist::new().ok_or_else(|| anyhow::anyhow!("Proplist creation failed"))?;
         proplist
-            .set_str(pulse::proplist::properties::APPLICATION_NAME, "PAnotify")
+            .set_str(pulse::proplist::properties::APPLICATION_NAME, "SysNotifier")
             .unwrap();
 
         let mut mainloop = pulse::mainloop::threaded::Mainloop::new()
             .ok_or_else(|| anyhow::anyhow!("Mainloop creation failed"))?;
 
         let mut context =
-            pulse::context::Context::new_with_proplist(&mainloop, "PAnotify", &proplist)
+            pulse::context::Context::new_with_proplist(&mainloop, "SysNotifier", &proplist)
                 .ok_or_else(|| anyhow::anyhow!("Context creation failed"))?;
 
         context.connect(None, pulse::context::FlagSet::NOFLAGS, None)?;

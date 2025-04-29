@@ -5,16 +5,16 @@
   ...
 }:
 let
-  cfg = config.services.panotify;
+  cfg = config.services.sysnotifier;
 in
 {
-  options.services.panotify = {
-    enable = lib.mkEnableOption "panotify";
-    package = lib.mkPackageOption pkgs "panotify" { };
+  options.services.sysnotifier = {
+    enable = lib.mkEnableOption "sysnotifier";
+    package = lib.mkPackageOption pkgs "sysnotifier" { };
   };
 
   config = lib.mkIf cfg.enable {
-    systemd.user.services.panotify = {
+    systemd.user.services.sysnotifier = {
       Install = {
         WantedBy = [ "graphical-session.target" ];
       };

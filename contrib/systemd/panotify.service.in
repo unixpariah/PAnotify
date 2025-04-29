@@ -2,12 +2,12 @@
 WantedBy=graphical-session.target
 
 [Service]
-ExecStart=@bindir@/panotify
+ExecStart=@bindir@/sysnotifier
 Restart=always
 RestartSec=10
 
 [Unit]
 After=graphical-session.target
-Description=Pulse Audio and Notification bridge 
+Description=Key system events notifier
 PartOf=graphical-session.target
 

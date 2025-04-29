@@ -9,7 +9,7 @@ let
   cargoToml = builtins.fromTOML (builtins.readFile ../Cargo.toml);
 in
 rustPlatform.buildRustPackage {
-  pname = "panotify";
+  pname = "sysnotifier";
   inherit (cargoToml.package) version;
 
   cargoLock.lockFile = ../Cargo.lock;
@@ -42,17 +42,17 @@ rustPlatform.buildRustPackage {
 
   installPhase = ''
     mkdir -p $out/bin
-    cp target/release/panotify $out/bin/
+    cp target/release/sysnotifier $out/bin/
   '';
 
   doCheck = false;
 
   meta = with lib; {
     description = "Pulse Audio and Notification bridge";
-    homepage = "https://github.com/unixpariah/PAnotify";
+    homepage = "https://github.com/unixpariah/SysNotifier";
     license = licenses.mit;
     maintainers = [ maintainers.unixpariah ];
     platforms = platforms.linux;
-    mainProgram = "panotify";
+    mainProgram = "sysnotifier";
   };
 }

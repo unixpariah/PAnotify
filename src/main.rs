@@ -7,14 +7,14 @@ use pulse::Volume;
 use std::collections::HashMap;
 use std::sync::mpsc;
 
-struct PAnotify<'a> {
+struct SysNotifier<'a> {
     pulse: pulse::PulseManager,
     notifier: Notifier<'a>,
     event_channel: mpsc::Receiver<Event>,
     last_volume: Option<Volume>,
 }
 
-impl PAnotify<'_> {
+impl SysNotifier<'_> {
     async fn new() -> anyhow::Result<Self> {
         let (tx, rx) = mpsc::channel();
 
@@ -132,8 +132,8 @@ enum Event {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let panotify = PAnotify::new().await?;
-    panotify.run().await?;
+    let sysnotifier = SysNotifier::new().await?;
+    sysnotifier.run().await?;
 
     Ok(())
 }

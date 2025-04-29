@@ -86,7 +86,7 @@ impl<'a> NotificationBuilder<'a> {
 
         self.proxy
             .notify(
-                "PAnotify",
+                "SysNotifier",
                 self.id,
                 self.icon,
                 self.summary,

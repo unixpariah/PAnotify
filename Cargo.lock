@@ -525,16 +525,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "panotify"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "libpulse-binding",
- "tokio",
- "zbus",
-]
-
-[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -756,6 +746,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "sysnotifier"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libpulse-binding",
+ "tokio",
+ "zbus",
 ]
 
 [[package]]
