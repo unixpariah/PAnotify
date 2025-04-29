@@ -5,6 +5,7 @@ use libpulse_binding::proplist::Proplist;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+#[derive(PartialEq)]
 pub struct Volume {
     pub value: u32,
     pub muted: bool,

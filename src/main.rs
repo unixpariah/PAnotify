@@ -11,6 +11,7 @@ struct PAnotify<'a> {
     pulse: pulse::PulseManager,
     notifier: Notifier<'a>,
     event_channel: mpsc::Receiver<Event>,
+    last_volume: Option<Volume>,
 }
 
 impl PAnotify<'_> {
@@ -30,12 +31,15 @@ impl PAnotify<'_> {
             }
         });
 
-        pulse.subscribe(InterestMaskSet::SINK | InterestMaskSet::CARD);
+        pulse.subscribe(
+            InterestMaskSet::SERVER | InterestMaskSet::SINK_INPUT | InterestMaskSet::SINK,
+        );
 
         Ok(Self {
             event_channel: rx,
             pulse,
             notifier: Notifier::new().await?,
+            last_volume: None,
         })
     }
 
@@ -44,7 +48,14 @@ impl PAnotify<'_> {
             match self.event_channel.recv() {
                 Ok(Event::VolumeChanged) => {
                     let volume = self.pulse.get_default_sink_volume()?;
-                    self.notifier.send_volume_notification(volume).await?;
+                    if self
+                        .last_volume
+                        .as_ref()
+                        .is_none_or(|last_volume| *last_volume != volume)
+                    {
+                        self.notifier.send_volume_notification(&volume).await?;
+                        self.last_volume = Some(volume);
+                    }
                 }
                 Ok(Event::DefaultDeviceChanged) => {
                     self.notifier.send_device_change_notification().await?;
@@ -69,7 +80,7 @@ impl<'a> Notifier<'a> {
         })
     }
 
-    async fn send_volume_notification(&mut self, volume: Volume) -> anyhow::Result<()> {
+    async fn send_volume_notification(&mut self, volume: &Volume) -> anyhow::Result<()> {
         let id = *self
             .active_notifications
             .get(&Event::VolumeChanged)
