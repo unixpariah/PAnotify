@@ -1,11 +1,13 @@
 mod notify;
 mod pulse;
+mod upower;
 
 use libpulse_binding::context::subscribe::{Facility, InterestMaskSet};
 use notify::notify;
 use pulse::Volume;
 use std::collections::HashMap;
 use std::sync::mpsc;
+use upower::{BatteryLevel, BatteryManager, BatteryState};
 
 struct SysNotifier<'a> {
     pulse: pulse::PulseManager,
@@ -18,6 +20,9 @@ impl SysNotifier<'_> {
     async fn new() -> anyhow::Result<Self> {
         let (tx, rx) = mpsc::channel();
 
+        let battery = BatteryManager::new().await?;
+        battery.subscribe(tx.clone()).await?;
+
         let mut pulse = pulse::PulseManager::new()?;
         pulse.set_subscription_callback(move |facility, _, _| {
             let event = match facility {
@@ -27,7 +32,7 @@ impl SysNotifier<'_> {
             };
 
             if let Some(event) = event {
-                let _ = tx.send(event);
+                _ = tx.send(event);
             }
         });
 
@@ -59,6 +64,21 @@ impl SysNotifier<'_> {
                 }
                 Ok(Event::DefaultDeviceChanged) => {
                     self.notifier.send_device_change_notification().await?;
+                }
+                Ok(Event::BatteryLevel(level)) => {
+                    self.notifier
+                        .send_battery_level_notification(&level)
+                        .await?;
+                }
+                Ok(Event::BatteryState(state)) => {
+                    self.notifier
+                        .send_battery_state_notification(&state)
+                        .await?;
+                }
+                Ok(Event::OnBattery(on_battery)) => {
+                    self.notifier
+                        .send_power_source_notification(on_battery)
+                        .await?;
                 }
                 Err(_) => break,
             }
@@ -122,12 +142,139 @@ impl<'a> Notifier<'a> {
             .insert(Event::DefaultDeviceChanged, new_id);
         Ok(())
     }
+
+    async fn send_battery_state_notification(
+        &mut self,
+        state: &BatteryState,
+    ) -> anyhow::Result<()> {
+        let id = *self
+            .active_notifications
+            .get(&Event::BatteryState(*state))
+            .unwrap_or(&0);
+
+        let summary = match state {
+            BatteryState::Charging => "Battery is charging",
+            BatteryState::Discharging => "Battery is discharging",
+            BatteryState::Empty => "Battery is empty",
+            BatteryState::FullyCharged => "Battery fully charged",
+            BatteryState::PendingCharge => "Battery pending charge",
+            BatteryState::PendingDischarge => "Battery pending discharge",
+            BatteryState::Unknown => "Battery state unknown",
+        };
+
+        let icon = match state {
+            BatteryState::Charging => "battery-charging-symbolic",
+            BatteryState::Discharging => "battery-symbolic",
+            BatteryState::Empty => "battery-empty-symbolic",
+            BatteryState::FullyCharged => "battery-full-charged-symbolic",
+            _ => "battery-missing-symbolic",
+        };
+
+        let new_id = self
+            .builder
+            .clone()
+            .with_summary(summary)
+            .with_icon(icon)
+            .with_id(id)
+            .send()
+            .await?;
+
+        self.active_notifications
+            .insert(Event::BatteryState(*state), new_id);
+        Ok(())
+    }
+
+    async fn send_battery_level_notification(
+        &mut self,
+        level: &BatteryLevel,
+    ) -> anyhow::Result<()> {
+        let id = *self
+            .active_notifications
+            .get(&Event::BatteryLevel(*level))
+            .unwrap_or(&0);
+
+        let (summary, icon, urgency) = match level {
+            BatteryLevel::Critical => (
+                "Battery level critical",
+                "battery-caution-symbolic",
+                notify::Urgency::Critical,
+            ),
+            BatteryLevel::Low => (
+                "Battery level low",
+                "battery-low-symbolic",
+                notify::Urgency::Normal,
+            ),
+            BatteryLevel::Normal => (
+                "Battery level normal",
+                "battery-good-symbolic",
+                notify::Urgency::Low,
+            ),
+            BatteryLevel::High => (
+                "Battery level high",
+                "battery-full-symbolic",
+                notify::Urgency::Low,
+            ),
+            BatteryLevel::Full => (
+                "Battery level full",
+                "battery-full-charged-symbolic",
+                notify::Urgency::Low,
+            ),
+            _ => (
+                "Battery level unknown",
+                "battery-missing-symbolic",
+                notify::Urgency::Low,
+            ),
+        };
+
+        let new_id = self
+            .builder
+            .clone()
+            .with_summary(summary)
+            .with_icon(icon)
+            .with_urgency(urgency)
+            .with_id(id)
+            .send()
+            .await?;
+
+        self.active_notifications
+            .insert(Event::BatteryLevel(*level), new_id);
+        Ok(())
+    }
+
+    async fn send_power_source_notification(&mut self, on_battery: bool) -> anyhow::Result<()> {
+        let id = *self
+            .active_notifications
+            .get(&Event::OnBattery(on_battery))
+            .unwrap_or(&0);
+
+        let (summary, icon) = if on_battery {
+            ("Running on battery power", "battery-symbolic")
+        } else {
+            ("Connected to power", "ac-adapter-symbolic")
+        };
+
+        let new_id = self
+            .builder
+            .clone()
+            .with_summary(summary)
+            .with_icon(icon)
+            .with_id(id)
+            .send()
+            .await?;
+
+        self.active_notifications
+            .insert(Event::OnBattery(on_battery), new_id);
+        Ok(())
+    }
 }
 
 #[derive(PartialEq, Eq, Hash)]
 enum Event {
     VolumeChanged,
     DefaultDeviceChanged,
+    BatteryState(BatteryState),
+    BatteryLevel(BatteryLevel),
+    OnBattery(bool),
 }
 
 #[tokio::main]

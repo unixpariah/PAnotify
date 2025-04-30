@@ -29,7 +29,6 @@ pub enum Urgency {
 
 #[derive(Clone)]
 pub struct NotificationBuilder<'a> {
-    proxy: NotificationsProxy<'a>,
     summary: &'a str,
     body: &'a str,
     progress: Option<i32>,
@@ -39,14 +38,12 @@ pub struct NotificationBuilder<'a> {
 }
 
 pub async fn notify<'a>() -> zbus::Result<NotificationBuilder<'a>> {
-    let conn = zbus::Connection::session().await?;
     Ok(NotificationBuilder {
         summary: "",
         body: "",
         progress: None,
         icon: "",
         urgency: Urgency::Low,
-        proxy: NotificationsProxy::new(&conn).await?,
         id: 0,
     })
 }
@@ -59,6 +56,11 @@ impl<'a> NotificationBuilder<'a> {
 
     pub fn with_summary(mut self, summary: &'a str) -> Self {
         self.summary = summary;
+        self
+    }
+
+    pub fn with_icon(mut self, icon: &'a str) -> Self {
+        self.icon = icon;
         self
     }
 
@@ -78,13 +80,16 @@ impl<'a> NotificationBuilder<'a> {
     }
 
     pub async fn send(&self) -> zbus::Result<u32> {
+        let conn = zbus::Connection::session().await?;
+        let proxy = NotificationsProxy::new(&conn).await?;
+
         let mut hints = HashMap::new();
         hints.insert("urgency", zbus::zvariant::Value::U8(self.urgency as u8));
         if let Some(value) = self.progress {
             hints.insert("value", zbus::zvariant::Value::I32(value));
         }
 
-        self.proxy
+        proxy
             .notify(
                 "SysNotifier",
                 self.id,
