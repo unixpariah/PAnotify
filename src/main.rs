@@ -109,12 +109,25 @@ impl<'a> Notifier<'a> {
         let mut builder = self.builder.clone().with_id(id);
         let volume_summary = format!("Volume [ {}% ]", volume.value);
 
+        let icon_name = if volume.muted || volume.value == 0 {
+            "audio-volume-muted-symbolic"
+        } else if volume.value < 33 {
+            "audio-volume-low-symbolic"
+        } else if volume.value < 66 {
+            "audio-volume-medium-symbolic"
+        } else {
+            "audio-volume-high-symbolic"
+        };
+
         if volume.muted {
-            builder = builder.with_summary("Volume [ muted ]");
+            builder = builder
+                .with_summary("Volume [ muted ]")
+                .with_icon(icon_name);
         } else {
             builder = builder
                 .with_summary(&volume_summary)
-                .with_progress(volume.value as i32);
+                .with_progress(volume.value as i32)
+                .with_icon(icon_name);
         }
 
         let new_id = builder.send().await?;
