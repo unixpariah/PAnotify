@@ -81,7 +81,7 @@ trait UPower {
 )]
 trait Device {
     #[zbus(property)]
-    fn percentage(&self) -> zbus::Result<u64>;
+    fn percentage(&self) -> zbus::Result<f64>;
 
     #[zbus(property)]
     fn battery_level(&self) -> zbus::Result<BatteryLevel>;
@@ -102,20 +102,54 @@ fn handle_on_battery(event_sender: &mpsc::Sender<Event>, value: bool) {
     _ = event_sender.send(Event::OnBattery(value));
 }
 
+fn handle_battery_percentage(event_sender: &mpsc::Sender<Event>, value: f64) {
+    _ = event_sender.send(Event::BatteryPercentage(value as u64));
+}
+
 pub struct BatteryManager {
     connection: zbus::Connection,
+    percentage: u64,
 }
 
 impl BatteryManager {
     pub async fn new() -> anyhow::Result<Self> {
         let connection = zbus::Connection::system().await?;
 
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            percentage: 0,
+        })
     }
 
-    pub async fn subscribe(&self, event_sender: mpsc::Sender<Event>) -> anyhow::Result<()> {
+    pub fn set_battery(&mut self, percentage: u64) {
+        self.percentage = percentage;
+    }
+
+    pub fn get_battery(&self) -> u64 {
+        self.percentage
+    }
+
+    pub async fn subscribe(&mut self, event_sender: mpsc::Sender<Event>) -> anyhow::Result<()> {
         let upower = UPowerProxy::new(&self.connection).await?;
         let device = upower.get_display_device().await?;
+
+        self.percentage = device.percentage().await? as u64;
+
+        {
+            let percentage = device.percentage().await?;
+            handle_battery_percentage(&event_sender, percentage);
+
+            let mut percentage_stream = device.receive_percentage_changed().await;
+
+            let event_sender = event_sender.clone();
+            tokio::spawn(async move {
+                while let Some(event) = percentage_stream.next().await {
+                    if let Ok(percentage) = event.get().await {
+                        handle_battery_percentage(&event_sender, percentage);
+                    }
+                }
+            });
+        }
 
         {
             let mut on_battery_stream = upower.receive_on_battery_changed().await;

@@ -14,13 +14,14 @@ struct SysNotifier<'a> {
     notifier: Notifier<'a>,
     event_channel: mpsc::Receiver<Event>,
     last_volume: Option<Volume>,
+    battery: BatteryManager,
 }
 
 impl SysNotifier<'_> {
     async fn new() -> anyhow::Result<Self> {
         let (tx, rx) = mpsc::channel();
 
-        let battery = BatteryManager::new().await?;
+        let mut battery = BatteryManager::new().await?;
         battery.subscribe(tx.clone()).await?;
 
         let mut pulse = pulse::PulseManager::new()?;
@@ -41,6 +42,7 @@ impl SysNotifier<'_> {
         );
 
         Ok(Self {
+            battery,
             event_channel: rx,
             pulse,
             notifier: Notifier::new().await?,
@@ -49,6 +51,7 @@ impl SysNotifier<'_> {
     }
 
     async fn run(mut self) -> anyhow::Result<()> {
+        let percentage = self.battery.get_battery();
         loop {
             match self.event_channel.recv() {
                 Ok(Event::VolumeChanged) => {
@@ -67,18 +70,21 @@ impl SysNotifier<'_> {
                 }
                 Ok(Event::BatteryLevel(level)) => {
                     self.notifier
-                        .send_battery_level_notification(&level)
+                        .send_battery_level_notification(percentage, &level)
                         .await?;
                 }
                 Ok(Event::BatteryState(state)) => {
                     self.notifier
-                        .send_battery_state_notification(&state)
+                        .send_battery_state_notification(percentage, &state)
                         .await?;
                 }
                 Ok(Event::OnBattery(on_battery)) => {
                     self.notifier
-                        .send_power_source_notification(on_battery)
+                        .send_power_source_notification(percentage, on_battery)
                         .await?;
+                }
+                Ok(Event::BatteryPercentage(percentage)) => {
+                    self.battery.set_battery(percentage);
                 }
                 Err(_) => break,
             }
@@ -120,9 +126,7 @@ impl<'a> Notifier<'a> {
         };
 
         if volume.muted {
-            builder = builder
-                .with_summary("Volume [ muted ]")
-                .with_icon(icon_name);
+            builder = builder.with_summary("Volume Muted").with_icon(icon_name);
         } else {
             builder = builder
                 .with_summary(&volume_summary)
@@ -158,6 +162,7 @@ impl<'a> Notifier<'a> {
 
     async fn send_battery_state_notification(
         &mut self,
+        percentage: u64,
         state: &BatteryState,
     ) -> anyhow::Result<()> {
         let id = *self
@@ -165,22 +170,13 @@ impl<'a> Notifier<'a> {
             .get(&Event::BatteryState(*state))
             .unwrap_or(&0);
 
-        let summary = match state {
-            BatteryState::Charging => "Battery is charging",
-            BatteryState::Discharging => "Battery is discharging",
-            BatteryState::Empty => "Battery is empty",
-            BatteryState::FullyCharged => "Battery fully charged",
-            BatteryState::PendingCharge => "Battery pending charge",
-            BatteryState::PendingDischarge => "Battery pending discharge",
-            BatteryState::Unknown => "Battery state unknown",
-        };
-
-        let icon = match state {
-            BatteryState::Charging => "battery-charging-symbolic",
-            BatteryState::Discharging => "battery-symbolic",
-            BatteryState::Empty => "battery-empty-symbolic",
-            BatteryState::FullyCharged => "battery-full-charged-symbolic",
-            _ => "battery-missing-symbolic",
+        let (summary, icon) = match state {
+            BatteryState::Charging => ("Battery is charging", "battery-charging-symbolic"),
+            BatteryState::Empty => ("Battery is empty", "battery-empty-symbolic"),
+            BatteryState::FullyCharged => {
+                ("Battery fully charged", "battery-full-charged-symbolic")
+            }
+            _ => return Ok(()),
         };
 
         let new_id = self
@@ -188,6 +184,8 @@ impl<'a> Notifier<'a> {
             .clone()
             .with_summary(summary)
             .with_icon(icon)
+            .with_body(&format!("Current battery percentage: {percentage}%"))
+            .with_progress(percentage as i32)
             .with_id(id)
             .send()
             .await?;
@@ -199,6 +197,7 @@ impl<'a> Notifier<'a> {
 
     async fn send_battery_level_notification(
         &mut self,
+        percentage: u64,
         level: &BatteryLevel,
     ) -> anyhow::Result<()> {
         let id = *self
@@ -232,11 +231,7 @@ impl<'a> Notifier<'a> {
                 "battery-full-charged-symbolic",
                 notify::Urgency::Low,
             ),
-            _ => (
-                "Battery level unknown",
-                "battery-missing-symbolic",
-                notify::Urgency::Low,
-            ),
+            _ => return Ok(()),
         };
 
         let new_id = self
@@ -245,6 +240,8 @@ impl<'a> Notifier<'a> {
             .with_summary(summary)
             .with_icon(icon)
             .with_urgency(urgency)
+            .with_body(&format!("Current battery percentage: {percentage}%"))
+            .with_progress(percentage as i32)
             .with_id(id)
             .send()
             .await?;
@@ -254,7 +251,11 @@ impl<'a> Notifier<'a> {
         Ok(())
     }
 
-    async fn send_power_source_notification(&mut self, on_battery: bool) -> anyhow::Result<()> {
+    async fn send_power_source_notification(
+        &mut self,
+        percentage: u64,
+        on_battery: bool,
+    ) -> anyhow::Result<()> {
         let id = *self
             .active_notifications
             .get(&Event::OnBattery(on_battery))
@@ -270,6 +271,8 @@ impl<'a> Notifier<'a> {
             .builder
             .clone()
             .with_summary(summary)
+            .with_body(&format!("Current battery percentage: {percentage}%"))
+            .with_progress(percentage as i32)
             .with_icon(icon)
             .with_id(id)
             .send()
@@ -288,6 +291,7 @@ enum Event {
     BatteryState(BatteryState),
     BatteryLevel(BatteryLevel),
     OnBattery(bool),
+    BatteryPercentage(u64),
 }
 
 #[tokio::main]
